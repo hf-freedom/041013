@@ -67,7 +67,7 @@
         </div>
         <div class="reservation-actions">
           <button 
-            v-if="canCancel(reservation)"
+            v-if="reservation.status === 'pending' || reservation.status === 'approved'"
             class="btn btn-small btn-danger" 
             @click="handleCancel(reservation)"
           >
@@ -79,8 +79,8 @@
           <span v-else-if="reservation.status === 'rejected'" class="action-text">
             已驳回
           </span>
-          <span v-else-if="isPast(reservation)" class="action-text">
-            已结束
+          <span v-else class="action-text">
+            {{ reservation.status }}
           </span>
         </div>
       </div>
@@ -125,12 +125,17 @@ const getStatusText = (status: ReservationStatus) => {
 }
 
 const isPast = (reservation: Reservation) => {
-  // 使用本地时间创建日期对象，避免时区问题
-  const [year, month, day] = reservation.date.split('-').map(Number)
-  const [hours, minutes] = reservation.endTime.split(':').map(Number)
-  const endTime = new Date(year, month - 1, day, hours, minutes)
-  const now = new Date()
-  return endTime < now
+  // 比较日期字符串，避免时区问题
+  const today = new Date()
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  const nowTime = `${String(today.getHours()).padStart(2, '0')}:${String(today.getMinutes()).padStart(2, '0')}`
+  
+  // 如果日期在今天之前，已结束
+  if (reservation.date < todayStr) return true
+  // 如果日期在今天之后，未结束
+  if (reservation.date > todayStr) return false
+  // 如果是今天，比较时间
+  return reservation.endTime <= nowTime
 }
 
 // 是否可以取消：待审批、已通过且未结束
