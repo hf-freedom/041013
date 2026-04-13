@@ -17,6 +17,14 @@
           会议室管理
         </button>
         <button 
+          v-if="isAdmin"
+          :class="['tab', { active: activeTab === 'approval' }]"
+          @click="activeTab = 'approval'"
+        >
+          审批管理
+          <span v-if="pendingCount > 0" class="badge">{{ pendingCount }}</span>
+        </button>
+        <button 
           :class="['tab', { active: activeTab === 'myReservations' }]"
           @click="activeTab = 'myReservations'"
         >
@@ -27,6 +35,7 @@
       <div class="tab-content">
         <CalendarView v-if="activeTab === 'calendar'" />
         <RoomManagement v-else-if="activeTab === 'management'" />
+        <ApprovalManagement v-else-if="activeTab === 'approval'" />
         <MyReservations v-else-if="activeTab === 'myReservations'" />
       </div>
     </main>
@@ -34,17 +43,27 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useStore } from './stores'
 import { storeToRefs } from 'pinia'
 import AppHeader from './components/AppHeader.vue'
 import CalendarView from './components/CalendarView.vue'
 import RoomManagement from './components/RoomManagement.vue'
 import MyReservations from './components/MyReservations.vue'
+import ApprovalManagement from './components/ApprovalManagement.vue'
 
 const store = useStore()
-const { isAdmin } = storeToRefs(store)
+const { isAdmin, pendingReservations } = storeToRefs(store)
 const activeTab = ref('calendar')
+
+const pendingCount = computed(() => pendingReservations.value.length)
+
+// 当切换到非管理员用户时，如果当前在管理员专属页面，切换到日历页面
+watch(isAdmin, (newValue) => {
+  if (!newValue && (activeTab.value === 'management' || activeTab.value === 'approval')) {
+    activeTab.value = 'calendar'
+  }
+})
 </script>
 
 <style scoped>
@@ -76,6 +95,9 @@ const activeTab = ref('calendar')
   cursor: pointer;
   border-bottom: 2px solid transparent;
   transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .tab:hover {
@@ -87,8 +109,20 @@ const activeTab = ref('calendar')
   border-bottom-color: #409eff;
 }
 
+.badge {
+  background: #f56c6c;
+  color: white;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+}
+
 .tab-content {
   max-width: 1400px;
   margin: 0 auto;
+  width: 100%;
+  padding: 0 20px;
 }
 </style>
