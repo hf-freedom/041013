@@ -17,6 +17,14 @@
           会议室管理
         </button>
         <button 
+          v-if="isAdmin"
+          :class="['tab', { active: activeTab === 'approval' }]"
+          @click="activeTab = 'approval'"
+        >
+          审批管理
+          <span v-if="pendingCount > 0" class="badge">{{ pendingCount }}</span>
+        </button>
+        <button 
           :class="['tab', { active: activeTab === 'myReservations' }]"
           @click="activeTab = 'myReservations'"
         >
@@ -27,6 +35,7 @@
       <div class="tab-content">
         <CalendarView v-if="activeTab === 'calendar'" />
         <RoomManagement v-else-if="activeTab === 'management'" />
+        <ApprovalManagement v-else-if="activeTab === 'approval'" />
         <MyReservations v-else-if="activeTab === 'myReservations'" />
       </div>
     </main>
@@ -40,11 +49,16 @@ import { storeToRefs } from 'pinia'
 import AppHeader from './components/AppHeader.vue'
 import CalendarView from './components/CalendarView.vue'
 import RoomManagement from './components/RoomManagement.vue'
+import ApprovalManagement from './components/ApprovalManagement.vue'
 import MyReservations from './components/MyReservations.vue'
 
 const store = useStore()
 const { isAdmin } = storeToRefs(store)
 const activeTab = ref('calendar')
+
+const pendingCount = computed(() => {
+  return store.getPendingReservations().length
+})
 </script>
 
 <style scoped>
@@ -76,6 +90,10 @@ const activeTab = ref('calendar')
   cursor: pointer;
   border-bottom: 2px solid transparent;
   transition: all 0.3s;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .tab:hover {
@@ -85,6 +103,16 @@ const activeTab = ref('calendar')
 .tab.active {
   color: #409eff;
   border-bottom-color: #409eff;
+}
+
+.badge {
+  background: #f56c6c;
+  color: white;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
 }
 
 .tab-content {
