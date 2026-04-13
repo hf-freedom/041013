@@ -2,6 +2,8 @@
   <div class="calendar-view">
     <div class="section-header">
       <h2>会议室预定</h2>
+      <p class="subtitle" v-if="!isAdmin">普通用户预定需等待管理员审批</p>
+      <p class="subtitle admin" v-else>管理员预定自动通过，无需审批</p>
     </div>
 
     <div class="controls">
@@ -37,7 +39,8 @@
             :key="slot.time"
             :class="['time-slot', { 
               disabled: slot.disabled, 
-              reserved: slot.reservation,
+              reserved: slot.reservation?.status === 'approved',
+              pending: slot.reservation?.status === 'pending',
               'my-reservation': slot.reservation?.userId === currentUser.id
             }]"
             @click="handleSlotClick(slot)"
@@ -45,6 +48,7 @@
             <span v-if="slot.reservation" class="reservation-info">
               <span class="reservation-title">{{ slot.reservation.title }}</span>
               <span class="reservation-user">{{ getUserName(slot.reservation.userId) }}</span>
+              <span v-if="slot.reservation.status === 'pending'" class="reservation-status">待审批</span>
             </span>
             <span v-else-if="!slot.disabled" class="slot-time">{{ slot.time }}</span>
           </div>
@@ -61,6 +65,10 @@
           <span>已被预定</span>
         </div>
         <div class="legend-item">
+          <span class="legend-color pending"></span>
+          <span>审批中</span>
+        </div>
+        <div class="legend-item">
           <span class="legend-color my-reservation"></span>
           <span>我的预定</span>
         </div>
@@ -71,6 +79,7 @@
       </div>
     </div>
 
+    <!-- 预定弹窗 -->
     <div v-if="showReserveModal" class="modal-overlay" @click.self="closeReserveModal">
       <div class="modal">
         <div class="modal-header">
@@ -98,6 +107,14 @@
               </option>
             </select>
           </div>
+          <p class="form-tip" v-if="!isAdmin">
+            <span class="tip-icon">ℹ️</span>
+            提交后需等待管理员审批
+          </p>
+          <p class="form-tip admin" v-else>
+            <span class="tip-icon">✓</span>
+            管理员预定自动通过
+          </p>
         </div>
         <div class="modal-footer">
           <button class="btn" @click="closeReserveModal">取消</button>
@@ -106,6 +123,7 @@
       </div>
     </div>
 
+    <!-- 详情弹窗 -->
     <div v-if="showDetailModal" class="modal-overlay" @click.self="showDetailModal = false">
       <div class="modal" style="min-width: 350px">
         <div class="modal-header">
@@ -125,16 +143,15 @@
             <span class="detail-label">时间：</span>
             <span>{{ selectedReservation?.startTime }} - {{ selectedReservation?.endTime }}</span>
           </div>
+          <div class="detail-item">
+            <span class="detail-label">状态：</span>
+            <span :class="['status-text', selectedReservation?.status]">
+              {{ getStatusText(selectedReservation?.status) }}
+            </span>
+          </div>
         </div>
         <div class="modal-footer">
           <button class="btn" @click="showDetailModal = false">关闭</button>
-          <button 
-            v-if="selectedReservation?.userId === currentUser.id"
-            class="btn btn-danger" 
-            @click="cancelReservation"
-          >
-            取消预定
-          </button>
         </div>
       </div>
     </div>
@@ -145,10 +162,10 @@
 import { ref, computed, watch } from 'vue'
 import { useStore } from '../stores'
 import { storeToRefs } from 'pinia'
-import type { Reservation } from '../types'
+import type { Reservation, ReservationStatus } from '../types'
 
 const store = useStore()
-const { availableRooms, currentUser, users } = storeToRefs(store)
+const { availableRooms, currentUser, isAdmin, users } = storeToRefs(store)
 
 const selectedRoomId = ref('')
 const selectedDate = ref(formatDate(new Date()))
@@ -193,7 +210,8 @@ const timeSlots = computed(() => {
   const [startHour, startMin] = currentRoom.value.openTimeStart.split(':').map(Number)
   const [endHour, endMin] = currentRoom.value.openTimeEnd.split(':').map(Number)
   
-  const reservations = store.getReservationsByRoomAndDate(selectedRoomId.value, selectedDate.value)
+  // 获取已批准的预定和待审批的预定
+  const reservations = store.getActiveReservationsByRoomAndDate(selectedRoomId.value, selectedDate.value)
   
   for (let h = startHour; h < endHour; h++) {
     for (let m = 0; m < 60; m += 30) {
@@ -201,9 +219,6 @@ const timeSlots = computed(() => {
       if (h === startHour && m < startMin) continue
       
       const time = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`
-      const endTime = m === 30 
-        ? `${(h + 1).toString().padStart(2, '0')}:00`
-        : `${h.toString().padStart(2, '0')}:30`
       
       const reservation = reservations.find(r => {
         return time >= r.startTime && time < r.endTime
@@ -259,6 +274,16 @@ const getUserName = (userId: string) => {
   return users.value.find(u => u.id === userId)?.name || '未知用户'
 }
 
+const getStatusText = (status?: ReservationStatus) => {
+  const statusMap: Record<ReservationStatus, string> = {
+    pending: '待审批',
+    approved: '已通过',
+    rejected: '已驳回',
+    cancelled: '已取消'
+  }
+  return status ? statusMap[status] : ''
+}
+
 const handleSlotClick = (slot: { time: string; disabled: boolean; reservation: Reservation | null }) => {
   if (slot.disabled) return
   
@@ -310,15 +335,11 @@ const confirmReserve = () => {
   })
   
   closeReserveModal()
-  alert('预定成功！')
-}
-
-const cancelReservation = () => {
-  if (selectedReservation.value) {
-    store.deleteReservation(selectedReservation.value.id)
-    showDetailModal.value = false
-    selectedReservation.value = null
-    alert('已取消预定')
+  
+  if (isAdmin.value) {
+    alert('预定成功！管理员预定已自动通过。')
+  } else {
+    alert('预定申请已提交，请等待管理员审批。')
   }
 }
 </script>
@@ -329,12 +350,22 @@ const cancelReservation = () => {
 }
 
 .section-header {
-  margin-bottom: 24px;
+  margin-bottom: 16px;
 }
 
 .section-header h2 {
   font-size: 20px;
   color: #303133;
+  margin-bottom: 4px;
+}
+
+.subtitle {
+  font-size: 13px;
+  color: #e6a23c;
+}
+
+.subtitle.admin {
+  color: #67c23a;
 }
 
 .controls {
@@ -358,6 +389,16 @@ const cancelReservation = () => {
 .control-group select,
 .control-group input {
   min-width: 200px;
+  padding: 8px 12px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.control-group select:focus,
+.control-group input:focus {
+  outline: none;
+  border-color: #409eff;
 }
 
 .calendar-container {
@@ -403,33 +444,35 @@ const cancelReservation = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  color: #909399;
+  font-size: 13px;
+  color: #606266;
   border-bottom: 1px solid #f0f0f0;
 }
 
 .time-slots {
   flex: 1;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
 }
 
 .time-slot {
   height: 60px;
-  padding: 8px 12px;
   border-bottom: 1px solid #f0f0f0;
-  cursor: pointer;
-  transition: background 0.2s;
+  border-right: 1px solid #f0f0f0;
   display: flex;
   align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s;
+  position: relative;
 }
 
-.time-slot:hover:not(.disabled):not(.reserved) {
+.time-slot:hover:not(.disabled):not(.reserved):not(.pending) {
   background: #ecf5ff;
 }
 
 .time-slot.disabled {
-  background: #f5f5f5;
+  background: #f5f7fa;
   cursor: not-allowed;
 }
 
@@ -438,30 +481,50 @@ const cancelReservation = () => {
   cursor: pointer;
 }
 
+.time-slot.pending {
+  background: #fdf6ec;
+  cursor: pointer;
+}
+
 .time-slot.my-reservation {
-  background: #e6f7ff;
+  border: 2px solid #409eff;
 }
 
 .slot-time {
-  font-size: 12px;
-  color: #909399;
+  font-size: 13px;
+  color: #606266;
 }
 
 .reservation-info {
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 4px;
+  padding: 4px;
 }
 
 .reservation-title {
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 500;
   color: #303133;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
 }
 
 .reservation-user {
-  font-size: 12px;
-  color: #909399;
+  font-size: 11px;
+  color: #606266;
+}
+
+.reservation-status {
+  font-size: 10px;
+  color: #e6a23c;
+  background: #fff;
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 
 .legend {
@@ -470,45 +533,205 @@ const cancelReservation = () => {
   padding: 16px 20px;
   background: #fafafa;
   border-top: 1px solid #eee;
+  flex-wrap: wrap;
 }
 
 .legend-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: 13px;
   color: #606266;
 }
 
 .legend-color {
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   border-radius: 4px;
+  border: 1px solid #ddd;
 }
 
 .legend-color.available {
   background: white;
-  border: 1px solid #dcdfe6;
 }
 
 .legend-color.reserved {
   background: #fef0f0;
 }
 
+.legend-color.pending {
+  background: #fdf6ec;
+}
+
 .legend-color.my-reservation {
-  background: #e6f7ff;
+  background: white;
+  border: 2px solid #409eff;
 }
 
 .legend-color.disabled {
-  background: #f5f5f5;
+  background: #f5f7fa;
+}
+
+/* 弹窗样式 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal {
+  background: white;
+  border-radius: 8px;
+  min-width: 400px;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow: auto;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 20px;
+  border-bottom: 1px solid #eee;
+}
+
+.modal-header h3 {
+  font-size: 16px;
+  color: #303133;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #909399;
+  cursor: pointer;
+}
+
+.modal-body {
+  padding: 20px;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 16px 20px;
+  border-top: 1px solid #eee;
+}
+
+.form-group {
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: #606266;
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: #409eff;
+}
+
+.form-tip {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #fdf6ec;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #e6a23c;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.form-tip.admin {
+  background: #f0f9eb;
+  color: #67c23a;
+}
+
+.tip-icon {
+  font-size: 14px;
 }
 
 .detail-item {
+  display: flex;
   margin-bottom: 12px;
+  font-size: 14px;
 }
 
 .detail-label {
   color: #909399;
-  margin-right: 8px;
+  width: 80px;
+  flex-shrink: 0;
+}
+
+.status-text {
+  font-weight: 500;
+}
+
+.status-text.pending {
+  color: #e6a23c;
+}
+
+.status-text.approved {
+  color: #67c23a;
+}
+
+.status-text.rejected {
+  color: #f56c6c;
+}
+
+.status-text.cancelled {
+  color: #909399;
+}
+
+/* 按钮样式 */
+.btn {
+  padding: 8px 16px;
+  border: 1px solid #dcdfe6;
+  background: white;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.3s;
+}
+
+.btn:hover {
+  border-color: #c6e2ff;
+  color: #409eff;
+}
+
+.btn-primary {
+  background: #409eff;
+  color: white;
+  border-color: #409eff;
+}
+
+.btn-primary:hover {
+  background: #66b1ff;
+  border-color: #66b1ff;
+  color: white;
 }
 </style>
