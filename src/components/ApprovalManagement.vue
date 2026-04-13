@@ -1,34 +1,32 @@
 <template>
-  <div class="my-reservations">
+  <div class="approval-management">
     <div class="section-header">
-      <h2>我的预定</h2>
+      <h2>审批管理</h2>
+      <span class="badge" v-if="pendingReservations.length > 0">待审批: {{ pendingReservations.length }}</span>
     </div>
 
-    <div v-if="myReservations.length === 0" class="empty-state">
-      <p>暂无预定记录</p>
+    <div v-if="pendingReservations.length === 0" class="empty-state">
+      <p>暂无待审批的预定</p>
     </div>
 
     <div v-else class="reservation-list">
       <div v-for="reservation in sortedReservations" :key="reservation.id" class="reservation-card">
         <div class="reservation-info">
           <h3>{{ reservation.title }}</h3>
+          <p class="applicant">申请人：{{ getUserName(reservation.userId) }}</p>
           <p class="room-name">{{ getRoomName(reservation.roomId) }}</p>
           <p class="time-info">
             <span class="date">{{ reservation.date }}</span>
             <span class="time">{{ reservation.startTime }} - {{ reservation.endTime }}</span>
           </p>
-          <p :class="['status', reservation.status, { past: isPast(reservation) }]">
-            {{ getStatusText(reservation.status) }}
-            {{ isPast(reservation) && reservation.status === 'approved' ? ' - 已结束' : '' }}
-          </p>
+          <p class="status pending">待审批</p>
         </div>
         <div class="reservation-actions">
-          <button 
-            v-if="!isPast(reservation) && reservation.status !== 'cancelled' && reservation.status !== 'rejected'"
-            class="btn btn-small btn-danger" 
-            @click="cancelReservation(reservation)"
-          >
-            取消预定
+          <button class="btn btn-small btn-success" @click="approve(reservation)">
+            通过
+          </button>
+          <button class="btn btn-small btn-danger" @click="reject(reservation)">
+            驳回
           </button>
         </div>
       </div>
@@ -43,58 +41,65 @@ import { storeToRefs } from 'pinia'
 import type { Reservation } from '../types'
 
 const store = useStore()
-const { currentUser, rooms } = storeToRefs(store)
-
-const myReservations = computed(() => {
-  return store.getReservationsByUser(currentUser.value.id)
-})
+const { pendingReservations, users, rooms } = storeToRefs(store)
 
 const sortedReservations = computed(() => {
-  return [...myReservations.value].sort((a, b) => {
+  return [...pendingReservations.value].sort((a, b) => {
     const dateA = new Date(`${a.date}T${a.startTime}`)
     const dateB = new Date(`${b.date}T${b.startTime}`)
-    return dateB.getTime() - dateA.getTime()
+    return dateA.getTime() - dateB.getTime()
   })
 })
+
+const getUserName = (userId: string) => {
+  return users.value.find(u => u.id === userId)?.name || '未知用户'
+}
 
 const getRoomName = (roomId: string) => {
   return rooms.value.find(r => r.id === roomId)?.name || '未知会议室'
 }
 
-const isPast = (reservation: Reservation) => {
-  const endTime = new Date(`${reservation.date}T${reservation.endTime}`)
-  return endTime < new Date()
-}
-
-const getStatusText = (status: string) => {
-  const statusMap: Record<string, string> = {
-    pending: '待审批',
-    approved: '已通过',
-    rejected: '已驳回',
-    cancelled: '已取消'
+const approve = (reservation: Reservation) => {
+  if (store.checkTimeConflict(reservation.roomId, reservation.date, reservation.startTime, reservation.endTime, reservation.id)) {
+    alert('该时间段已有已通过的预定，无法通过审批')
+    return
   }
-  return statusMap[status] || status
+  store.updateReservationStatus(reservation.id, 'approved')
+  alert('已通过审批')
 }
 
-const cancelReservation = (reservation: Reservation) => {
-  if (confirm(`确定要取消预定"${reservation.title}"吗？`)) {
-    store.cancelReservation(reservation.id)
+const reject = (reservation: Reservation) => {
+  if (confirm(`确定要驳回"${reservation.title}"的预定吗？`)) {
+    store.updateReservationStatus(reservation.id, 'rejected')
+    alert('已驳回审批')
   }
 }
 </script>
 
 <style scoped>
-.my-reservations {
+.approval-management {
   padding: 20px;
 }
 
 .section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 24px;
 }
 
 .section-header h2 {
   font-size: 20px;
   color: #303133;
+}
+
+.badge {
+  background: #f56c6c;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 .empty-state {
@@ -105,7 +110,7 @@ const cancelReservation = (reservation: Reservation) => {
 
 .reservation-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
   gap: 20px;
 }
 
@@ -114,11 +119,18 @@ const cancelReservation = (reservation: Reservation) => {
   border-radius: 8px;
   padding: 20px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+  border-left: 4px solid #e6a23c;
 }
 
 .reservation-info h3 {
   font-size: 16px;
   color: #303133;
+  margin-bottom: 8px;
+}
+
+.reservation-info .applicant {
+  color: #606266;
+  font-size: 14px;
   margin-bottom: 8px;
 }
 
@@ -133,7 +145,7 @@ const cancelReservation = (reservation: Reservation) => {
   gap: 12px;
   font-size: 14px;
   color: #606266;
-  margin-bottom: 8px;
+  margin-bottom: 12px;
 }
 
 .reservation-info .status {
@@ -149,26 +161,9 @@ const cancelReservation = (reservation: Reservation) => {
   color: #e6a23c;
 }
 
-.reservation-info .status.approved {
-  background: #f0f9eb;
-  color: #67c23a;
-}
-
-.reservation-info .status.rejected {
-  background: #fef0f0;
-  color: #f56c6c;
-}
-
-.reservation-info .status.cancelled {
-  background: #f4f4f5;
-  color: #909399;
-}
-
-.reservation-info .status.past {
-  opacity: 0.8;
-}
-
 .reservation-actions {
+  display: flex;
+  gap: 12px;
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid #eee;

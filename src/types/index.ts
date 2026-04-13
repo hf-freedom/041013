@@ -13,6 +13,8 @@ export interface MeetingRoom {
   openTimeEnd: string
 }
 
+export type ReservationStatus = 'pending' | 'approved' | 'rejected' | 'cancelled'
+
 export interface Reservation {
   id: string
   roomId: string
@@ -21,5 +23,6 @@ export interface Reservation {
   startTime: string
   endTime: string
   title: string
+  status: ReservationStatus
   createdAt: string
 }

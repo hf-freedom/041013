@@ -45,6 +45,9 @@
             <span v-if="slot.reservation" class="reservation-info">
               <span class="reservation-title">{{ slot.reservation.title }}</span>
               <span class="reservation-user">{{ getUserName(slot.reservation.userId) }}</span>
+              <span :class="['reservation-status', slot.reservation.status]">
+                {{ getStatusText(slot.reservation.status) }}
+              </span>
             </span>
             <span v-else-if="!slot.disabled" class="slot-time">{{ slot.time }}</span>
           </div>
@@ -125,11 +128,17 @@
             <span class="detail-label">时间：</span>
             <span>{{ selectedReservation?.startTime }} - {{ selectedReservation?.endTime }}</span>
           </div>
+          <div class="detail-item">
+            <span class="detail-label">状态：</span>
+            <span :class="['status-badge', selectedReservation?.status]">
+              {{ getStatusText(selectedReservation?.status || '') }}
+            </span>
+          </div>
         </div>
         <div class="modal-footer">
           <button class="btn" @click="showDetailModal = false">关闭</button>
           <button 
-            v-if="selectedReservation?.userId === currentUser.id"
+            v-if="selectedReservation?.userId === currentUser.id && selectedReservation?.status !== 'cancelled' && selectedReservation?.status !== 'rejected'"
             class="btn btn-danger" 
             @click="cancelReservation"
           >
@@ -259,6 +268,16 @@ const getUserName = (userId: string) => {
   return users.value.find(u => u.id === userId)?.name || '未知用户'
 }
 
+const getStatusText = (status: string) => {
+  const statusMap: Record<string, string> = {
+    pending: '待审批',
+    approved: '已通过',
+    rejected: '已驳回',
+    cancelled: '已取消'
+  }
+  return statusMap[status] || status
+}
+
 const handleSlotClick = (slot: { time: string; disabled: boolean; reservation: Reservation | null }) => {
   if (slot.disabled) return
   
@@ -310,12 +329,16 @@ const confirmReserve = () => {
   })
   
   closeReserveModal()
-  alert('预定成功！')
+  if (store.isAdmin) {
+    alert('预定成功！已自动通过审批')
+  } else {
+    alert('预定申请已提交，请等待管理员审批')
+  }
 }
 
 const cancelReservation = () => {
   if (selectedReservation.value) {
-    store.deleteReservation(selectedReservation.value.id)
+    store.cancelReservation(selectedReservation.value.id)
     showDetailModal.value = false
     selectedReservation.value = null
     alert('已取消预定')
@@ -510,5 +533,60 @@ const cancelReservation = () => {
 .detail-label {
   color: #909399;
   margin-right: 8px;
+}
+
+.reservation-status {
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 500;
+}
+
+.reservation-status.pending {
+  background: #fdf6ec;
+  color: #e6a23c;
+}
+
+.reservation-status.approved {
+  background: #f0f9eb;
+  color: #67c23a;
+}
+
+.reservation-status.rejected {
+  background: #fef0f0;
+  color: #f56c6c;
+}
+
+.reservation-status.cancelled {
+  background: #f4f4f5;
+  color: #909399;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.status-badge.pending {
+  background: #fdf6ec;
+  color: #e6a23c;
+}
+
+.status-badge.approved {
+  background: #f0f9eb;
+  color: #67c23a;
+}
+
+.status-badge.rejected {
+  background: #fef0f0;
+  color: #f56c6c;
+}
+
+.status-badge.cancelled {
+  background: #f4f4f5;
+  color: #909399;
 }
 </style>

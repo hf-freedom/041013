@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { User, MeetingRoom, Reservation } from '../types'
+import type { User, MeetingRoom, Reservation, ReservationStatus } from '../types'
 
 const generateId = () => Math.random().toString(36).substr(2, 9)
 
@@ -27,6 +27,10 @@ export const useStore = defineStore('app', () => {
 
   const isAdmin = computed(() => currentUser.value.role === 'admin')
   const availableRooms = computed(() => rooms.value.filter(r => !r.disabled))
+
+  const pendingReservations = computed(() => {
+    return reservations.value.filter(r => r.status === 'pending')
+  })
 
   function setCurrentUser(userId: string) {
     const user = users.value.find(u => u.id === userId)
@@ -58,14 +62,30 @@ export const useStore = defineStore('app', () => {
     }
   }
 
-  function addReservation(reservation: Omit<Reservation, 'id' | 'createdAt'>) {
+  function addReservation(reservation: Omit<Reservation, 'id' | 'createdAt' | 'status'>) {
+    const status: ReservationStatus = isAdmin.value ? 'approved' : 'pending'
     const newReservation: Reservation = {
       ...reservation,
       id: generateId(),
+      status,
       createdAt: new Date().toISOString(),
     }
     reservations.value.push(newReservation)
     return newReservation
+  }
+
+  function updateReservationStatus(id: string, status: ReservationStatus) {
+    const index = reservations.value.findIndex(r => r.id === id)
+    if (index !== -1) {
+      reservations.value[index].status = status
+    }
+  }
+
+  function cancelReservation(id: string) {
+    const index = reservations.value.findIndex(r => r.id === id)
+    if (index !== -1) {
+      reservations.value[index].status = 'cancelled'
+    }
   }
 
   function deleteReservation(id: string) {
@@ -76,7 +96,12 @@ export const useStore = defineStore('app', () => {
   }
 
   function getReservationsByRoomAndDate(roomId: string, date: string) {
-    return reservations.value.filter(r => r.roomId === roomId && r.date === date)
+    return reservations.value.filter(r => 
+      r.roomId === roomId && 
+      r.date === date && 
+      r.status !== 'rejected' && 
+      r.status !== 'cancelled'
+    )
   }
 
   function getReservationsByUser(userId: string) {
@@ -85,7 +110,10 @@ export const useStore = defineStore('app', () => {
 
   function checkTimeConflict(roomId: string, date: string, startTime: string, endTime: string, excludeId?: string) {
     const roomReservations = reservations.value.filter(
-      r => r.roomId === roomId && r.date === date && r.id !== excludeId
+      r => r.roomId === roomId && 
+           r.date === date && 
+           r.id !== excludeId &&
+           r.status === 'approved'
     )
     
     for (const reservation of roomReservations) {
@@ -110,11 +138,14 @@ export const useStore = defineStore('app', () => {
     reservations,
     isAdmin,
     availableRooms,
+    pendingReservations,
     setCurrentUser,
     addRoom,
     updateRoom,
     deleteRoom,
     addReservation,
+    updateReservationStatus,
+    cancelReservation,
     deleteReservation,
     getReservationsByRoomAndDate,
     getReservationsByUser,
