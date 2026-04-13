@@ -1,0 +1,25 @@
+export interface User {
+  id: string
+  name: string
+  role: 'admin' | 'user'
+}
+
+export interface MeetingRoom {
+  id: string
+  name: string
+  location: string
+  disabled: boolean
+  openTimeStart: string
+  openTimeEnd: string
+}
+
+export interface Reservation {
+  id: string
+  roomId: string
+  userId: string
+  date: string
+  startTime: string
+  endTime: string
+  title: string
+  createdAt: string
+}
